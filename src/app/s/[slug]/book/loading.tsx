@@ -1,0 +1,3 @@
+import { PageLoading } from "@/components/loading";
+
+export default PageLoading;

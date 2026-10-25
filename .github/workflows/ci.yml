@@ -1,0 +1,36 @@
+name: ci
+on: [push, pull_request]
+
+env:
+  DATABASE_URL: postgres://salon_app:app@localhost:5564/salon
+  MIGRATION_DATABASE_URL: postgres://salon_owner:owner@localhost:5564/salon
+  BETTER_AUTH_SECRET: ci-only-secret-0123456789abcdef0123456789abcdef
+  BETTER_AUTH_URL: http://localhost:3100
+  APP_URL: http://localhost:3100
+  # The sandbox needs real keys; CI uses tools/fake-midtrans.mjs, which speaks the same API and signatures.
+  MIDTRANS_SERVER_KEY: SB-Mid-server-ci
+  MIDTRANS_SNAP_URL: http://localhost:4010/snap/v1
+  MIDTRANS_API_URL: http://localhost:4010/v2
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: docker compose up -d --wait
+      - run: npx tsx scripts/migrate.mts
+      - run: npx tsx scripts/seed.mts
+      - run: npx next typegen && npx tsc --noEmit
+      - run: npx eslint src
+      - name: Unit and database tests (RLS, double booking, payments)
+        run: npx vitest run
+      - run: npx next build
+      - run: npx playwright install --with-deps chromium
+      - name: End-to-end (book, pay, expire, owner dashboard, tenant isolation)
+        run: npx playwright test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: playwright-traces, path: test-results }
